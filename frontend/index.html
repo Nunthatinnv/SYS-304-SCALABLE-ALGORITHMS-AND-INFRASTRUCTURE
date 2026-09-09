@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Ames House Price Predictor</title>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <main class="shell">
+      <header>
+        <h1>Ames House Price Predictor</h1>
+        <p class="subtitle">
+          SYS-304 Milestone 2 &mdash; XGBoost baseline served over a FastAPI
+          <code>/predict</code> endpoint.
+        </p>
+        <p id="api-status" class="status status--pending">Checking API&hellip;</p>
+      </header>
+
+      <form id="predict-form" novalidate>
+        <div id="fields" class="fields">
+          <p class="loading">Loading form schema&hellip;</p>
+        </div>
+
+        <div class="actions">
+          <button id="submit-button" type="submit" disabled>Predict price</button>
+          <button id="reset-button" type="button">Reset to defaults</button>
+        </div>
+      </form>
+
+      <section id="result" class="result" hidden>
+        <p class="result__label">Predicted sale price</p>
+        <p id="result-price" class="result__price"></p>
+        <p id="result-meta" class="result__meta"></p>
+      </section>
+
+      <section id="error" class="error" hidden>
+        <p class="error__title">Request failed</p>
+        <p id="error-detail" class="error__detail"></p>
+      </section>
+
+      <footer>
+        <p>
+          Remaining model inputs are filled with training-set medians and modes.
+          Not financial advice.
+        </p>
+      </footer>
+    </main>
+
+    <script src="config.js"></script>
+    <script src="app.js"></script>
+  </body>
+</html>

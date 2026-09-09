@@ -1,0 +1,13 @@
+.git
+.github
+.venv
+notebooks
+data
+_to_delete
+**/__pycache__
+**/*.pyc
+**/.DS_Store
+**/.pytest_cache
+**/.ruff_cache
+backend/tests
+frontend/tests

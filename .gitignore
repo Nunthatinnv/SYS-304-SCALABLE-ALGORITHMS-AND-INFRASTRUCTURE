@@ -11,3 +11,10 @@ env/
 
 # Jupyter
 *.nbconvert.ipynb
+
+# Tooling caches
+.pytest_cache/
+.ruff_cache/
+
+# Docker
+*.env
