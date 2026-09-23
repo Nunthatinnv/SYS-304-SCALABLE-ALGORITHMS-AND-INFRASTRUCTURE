@@ -29,10 +29,15 @@ JSON (10 fields)
 |---|---|
 | `app/main.py` | FastAPI app, routes, CORS, startup model load |
 | `app/schemas.py` | Pydantic request/response models and validation rules |
-| `app/model.py` | Model loading, row widening, inference |
+| `app/model.py` | Pluggable inference backends (`sklearn` / `onnx` / `student`), batch inference |
+| `app/batching.py` | Dynamic micro-batcher (asyncio queue → one model call per batch) |
+| `app/cache.py` | Two-tier exact-match cache: in-process LRU (L1) + Redis (L2) |
 | `app/reference.py` | Typed accessor over `defaults.json` |
 | `app/config.py` | Environment-driven configuration |
 | `app/defaults.json` | Frozen column order, defaults, categories, ranges |
+| `gunicorn.conf.py` | Process manager: N Uvicorn workers (one per CPU) |
+| `scripts/export_onnx.py` | Phase 3: full pipeline → `models/xgb_pipeline.onnx` (+ parity check) |
+| `scripts/distill_student.py` | Phase 3: distil the teacher → `models/student_xgb.onnx` |
 
 ## `defaults.json`
 
@@ -110,10 +115,28 @@ Interactive docs are served at `/docs` (Swagger) and `/redoc`.
 - **`libgomp1`** is installed in the image because the XGBoost wheel needs
   OpenMP at runtime.
 
+## Phase 3 endpoints
+
+- `POST /predict` now returns `"cached": true|false`. Request path:
+  L1 LRU → Redis → dynamic batcher → model; misses are written back to both
+  tiers (Redis in the background).
+- `POST /predict/batch` — up to 256 houses in one call, scored in one model call.
+- `GET /stats` — per-worker counters: backend, cache hits (L1/L2), batch sizes.
+- `GET /health` additionally reports `model_backend`.
+
 ## Configuration
 
 | Variable | Default | Meaning |
 |---|---|---|
+| `MODEL_BACKEND` | `student` | `student` (distilled, ONNX), `onnx` (full pipeline, ONNX) or `sklearn` (Phase 2 pickle) |
+| `WEB_CONCURRENCY` | CPU count | Gunicorn worker processes |
+| `ORT_THREADS` | `1` | onnxruntime intra-op threads per worker |
+| `BATCHING_ENABLED` | `true` | Dynamic batching on/off |
+| `BATCH_MAX_SIZE` / `BATCH_MAX_WAIT_MS` | `64` / `0` | Batch cap; wait window (0 = greedy) |
+| `REDIS_URL` | *(empty = off)* | Redis L2 cache, e.g. `redis://redis:6379/0` |
+| `CACHE_L1_SIZE` | `10000` | Per-worker in-process LRU entries (0 = off) |
+| `CACHE_TTL_SECONDS` | `86400` | TTL for both cache tiers |
+| `MAX_REQUESTS` | `0` | Recycle a worker after N requests (0 = never) |
 | `MODEL_PATH` | `<repo>/models/xgb_baseline_pipeline.pkl` | Pipeline artefact |
 | `DEFAULTS_PATH` | `backend/app/defaults.json` | Reference metadata |
 | `CORS_ORIGINS` | `*` | Comma-separated allowed origins |
@@ -142,6 +165,10 @@ pytest backend/tests
   deterministic predictions, monotonicity in `OverallQual`.
 - `test_api.py` — integration tests through the real app: `/health`, `/schema`,
   `/predict` 200 and 422 paths, and the OpenAPI document.
+- `test_phase3.py` — ONNX parity with the pickle, student fidelity and
+  fallback, batch = single predictions, backend selection, micro-batcher
+  grouping / greedy mode / error propagation, LRU, L1 and Redis L2 hits via the
+  API, dead-Redis resilience, `/predict/batch`, `/stats`.
 
 ## Regenerating `defaults.json`
 

@@ -2,10 +2,16 @@
 fastapi==0.141.1
 uvicorn[standard]==0.52.4
 pydantic==2.13.5
+# Phase 3: multi-process serving, ONNX inference, Redis cache
+gunicorn==26.2.0
+uvicorn-worker==0.4.0
+onnxruntime==1.30.0
+redis==8.1.0
 
 # Inference stack — pinned to the versions that produced
 # models/xgb_baseline_pipeline.pkl in Milestone 1. Changing these can break
-# unpickling or silently alter preprocessing behaviour.
+# unpickling or silently alter preprocessing behaviour. Still needed for the
+# MODEL_BACKEND=sklearn baseline used in benchmarks.
 pandas==3.0.5
 numpy==2.5.2
 scipy==1.18.1

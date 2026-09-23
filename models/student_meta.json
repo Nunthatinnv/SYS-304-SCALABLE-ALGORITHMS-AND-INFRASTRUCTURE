@@ -1,0 +1,63 @@
+{
+  "features": [
+    "OverallQual",
+    "GrLivArea",
+    "TotalBsmtSF",
+    "1stFlrSF",
+    "YearBuilt",
+    "GarageCars",
+    "FullBath",
+    "TotRmsAbvGrd",
+    "LotArea",
+    "Neighborhood"
+  ],
+  "neighborhood_codes": {
+    "Blmngtn": 0,
+    "Blueste": 1,
+    "BrDale": 2,
+    "BrkSide": 3,
+    "ClearCr": 4,
+    "CollgCr": 5,
+    "Crawfor": 6,
+    "Edwards": 7,
+    "Gilbert": 8,
+    "IDOTRR": 9,
+    "MeadowV": 10,
+    "Mitchel": 11,
+    "NAmes": 12,
+    "NPkVill": 13,
+    "NWAmes": 14,
+    "NoRidge": 15,
+    "NridgHt": 16,
+    "OldTown": 17,
+    "SWISU": 18,
+    "Sawyer": 19,
+    "SawyerW": 20,
+    "Somerst": 21,
+    "StoneBr": 22,
+    "Timber": 23,
+    "Veenker": 24
+  },
+  "params": {
+    "n_estimators": 150,
+    "max_depth": 4,
+    "learning_rate": 0.1,
+    "subsample": 0.9,
+    "random_state": 42
+  },
+  "synthetic_train_rows": 60000,
+  "metrics": {
+    "fidelity_rmse_log_holdout": 0.014967883005738258,
+    "fidelity_rmse_log_validation": 0.012543035671114922,
+    "val_rmse_log_teacher_all_79_columns": 0.13270311942416027,
+    "val_rmse_log_teacher_serving_protocol": 0.2127325799648788,
+    "val_rmse_log_student": 0.21353397866197424,
+    "val_rmse_usd_teacher_serving_protocol": 48948.87551418284,
+    "val_rmse_usd_student": 49208.50611475885,
+    "teacher_trees": 300,
+    "teacher_nodes": 8204,
+    "student_trees": 150,
+    "student_nodes": 4648,
+    "onnx_vs_native_max_abs_log": 1.1444091796875e-05
+  }
+}

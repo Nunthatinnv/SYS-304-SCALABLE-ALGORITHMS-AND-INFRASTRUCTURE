@@ -1,0 +1,47 @@
+flowchart LR
+    user(["Browser"])
+
+    subgraph FE["frontend container · nginx :8080"]
+        ui["Static UI<br/>index.html · app.js"]
+    end
+
+    subgraph BE["backend container · :8000"]
+        direction LR
+        gm["Gunicorn master<br/>forks &amp; supervises workers"]
+        subgraph W["Uvicorn worker × N  (one per CPU core, async event loop)"]
+            direction LR
+            val["FastAPI + Pydantic<br/>validation"]
+            key["sha256(canonical JSON)<br/>cache key"]
+            l1{{"L1 cache<br/>in-process LRU<br/>10k entries"}}
+            batch["Dynamic micro-batcher<br/>asyncio queue, greedy<br/>(≤ 64 rows per call)"]
+            stu["Student model<br/>ONNX Runtime<br/>150 trees · 10 features"]
+            fb["Fallback: full pipeline<br/>ONNX (79 columns)"]
+        end
+    end
+
+    redis[("L2 cache · Redis 7<br/>shared by all workers<br/>LRU · 128 MB · TTL 24 h")]
+
+    subgraph OFF["offline build (backend/scripts)"]
+        direction TB
+        pkl["xgb_baseline_pipeline.pkl<br/>(Phase 2 teacher)"]
+        onx["export_onnx.py →<br/>xgb_pipeline.onnx"]
+        dis["distill_student.py →<br/>student_xgb.onnx"]
+        pkl --> onx
+        pkl --> dis
+    end
+
+    user -- "GET page" --> ui
+    user -- "POST /predict (JSON)" --> gm
+    gm -- "shared :8000 socket" --> val
+    val --> key
+    key --> l1
+    l1 -- "hit → cached:true" --> user
+    l1 -- "miss: GET" --> redis
+    redis -- "hit (promote to L1)" --> user
+    redis -- "miss" --> batch
+    batch -- "one batched call<br/>(model thread)" --> stu
+    stu -. "non-form columns" .-> fb
+    stu -- "write-through: L1 +<br/>background SET" --> redis
+    stu -- "response" --> user
+    dis -. "loaded at worker start" .-> stu
+    onx -. "loaded on demand" .-> fb

@@ -9,12 +9,39 @@ services:
       - "${BACKEND_PORT:-8000}:8000"
     environment:
       CORS_ORIGINS: "*"
+      # Phase 3 knobs (see README "Phase 3").
+      MODEL_BACKEND: "${MODEL_BACKEND:-student}"   # student | onnx | sklearn
+      WEB_CONCURRENCY: "${WEB_CONCURRENCY:-}"      # empty = one worker per CPU
+      ORT_THREADS: "1"
+      REDIS_URL: "${REDIS_URL-redis://redis:6379/0}"   # set to "" to disable caching
+      CACHE_TTL_SECONDS: "86400"
+      CACHE_L1_SIZE: "${CACHE_L1_SIZE:-10000}"     # per-worker in-process LRU; 0 = off
+      BATCHING_ENABLED: "${BATCHING_ENABLED:-true}"
+      BATCH_MAX_SIZE: "64"
+      BATCH_MAX_WAIT_MS: "${BATCH_MAX_WAIT_MS:-0}" # 0 = greedy batching
+    depends_on:
+      redis:
+        condition: service_healthy
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://localhost:8000/health"]
       interval: 10s
       timeout: 3s
       retries: 5
       start_period: 40s
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    container_name: sys304-redis
+    # Pure cache: bounded memory, LRU eviction, no persistence to disk.
+    command: >
+      redis-server --maxmemory 128mb --maxmemory-policy allkeys-lru
+      --save "" --appendonly no
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
     restart: unless-stopped
 
   frontend:

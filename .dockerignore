@@ -1,6 +1,8 @@
 .git
 .github
 .venv
+benchmarks
+docs
 notebooks
 data
 _to_delete

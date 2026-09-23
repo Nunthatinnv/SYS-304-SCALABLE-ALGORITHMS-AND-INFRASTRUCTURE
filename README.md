@@ -171,3 +171,52 @@ ones that produced the pickle, and they need 3.11+.
   reference, `defaults.json`, configuration, tests.
 - [`frontend/docs/README.md`](frontend/docs/README.md) — UI structure, why the
   form is schema-driven, container configuration, tests.
+
+---
+
+# Milestone 3 — Architectural scaling & optimisation
+
+Full write-up with benchmark tables, charts and the architecture diagram:
+[`docs/SYS-304_Phase3_Report.pdf`](docs/SYS-304_Phase3_Report.pdf).
+
+**Headline (64 concurrent clients, 2 vCPU):** 65 → 2,680 req/s on unique traffic
+(41×), 68 → 5,947 req/s on repeated traffic (87×), p95 1,369 ms → 43 ms. Model
+inference 10.5 ms → 11 µs with validation RMSE +0.0008 (log price).
+
+## Week 5 — model-level
+
+| Technique | Where | Effect |
+|---|---|---|
+| **ONNX export** of the full pipeline (with fixes for XGBoost's sparse-zero-as-missing semantics and float64 scaler precision; parity 1.8e-5) | `backend/scripts/export_onnx.py` → `models/xgb_pipeline.onnx` | 33× faster, −105 MB RSS |
+| **Distillation** into a 150-tree student on the 10 fields the API accepts | `backend/scripts/distill_student.py` → `models/student_xgb.onnx` | 917× faster (with ONNX), 143 KB |
+| ONNX Runtime session tuning (graph opt `ALL`, 1 thread per worker) | `backend/app/model.py` | no oversubscription across workers |
+
+Benchmark (naive vs optimised, latency / memory / accuracy):
+`python benchmarks/bench_model.py` → `benchmarks/results/model_bench.{json,md}`.
+
+## Week 6 — system-level
+
+| Technique | Where |
+|---|---|
+| **Gunicorn + N Uvicorn workers**, async `/predict` | `backend/gunicorn.conf.py`, `backend/Dockerfile` |
+| **Dynamic (greedy) micro-batching** of concurrent requests, plus `POST /predict/batch` | `backend/app/batching.py` |
+| **Two-tier exact-match cache**: in-process LRU (L1) + **Redis** (L2, via Docker) | `backend/app/cache.py`, `docker-compose.yml` |
+
+Load test: `python benchmarks/load_test.py --url http://localhost:8000 --label mytest --mode cold warm`.
+Whole ablation suite with Docker: `./benchmarks/run_load_suite.sh`, then
+`python benchmarks/make_report.py` for charts (`benchmarks/results/figures/`)
+and `benchmarks/results/summary.md`.
+
+## Configuration knobs (docker-compose / env)
+
+`MODEL_BACKEND` (`student` | `onnx` | `sklearn`), `WEB_CONCURRENCY`,
+`BATCHING_ENABLED`, `BATCH_MAX_SIZE`, `BATCH_MAX_WAIT_MS`, `REDIS_URL`,
+`CACHE_L1_SIZE`, `CACHE_TTL_SECONDS` — see
+[`backend/docs/README.md`](backend/docs/README.md#configuration).
+`GET /stats` shows per-worker cache and batching counters.
+
+## Architecture
+
+![Phase 3 architecture](docs/architecture.png)
+
+Source: [`docs/architecture.mmd`](docs/architecture.mmd) (Mermaid).

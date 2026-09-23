@@ -65,6 +65,7 @@ class PredictResponse(BaseModel):
     sale_price: float = Field(..., description="Predicted sale price in US dollars")
     log_price: float = Field(..., description="Raw model output, log1p(SalePrice)")
     currency: str = Field(default="USD")
+    cached: bool = Field(default=False, description="Served from the Redis cache")
 
 
 class FieldSpec(BaseModel):
@@ -93,3 +94,4 @@ class HealthResponse(BaseModel):
     service: str
     version: str
     model_loaded: bool
+    model_backend: str | None = None

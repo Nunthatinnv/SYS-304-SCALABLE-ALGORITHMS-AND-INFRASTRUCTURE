@@ -2,12 +2,18 @@
 
 from __future__ import annotations
 
+import os
 from contextlib import asynccontextmanager
+from typing import Any
 
-from fastapi import FastAPI, HTTPException
+from fastapi import Body, FastAPI, HTTPException
+from fastapi.concurrency import run_in_threadpool
 from fastapi.middleware.cors import CORSMiddleware
 
+from . import config
 from . import model as model_module
+from .batching import MicroBatcher
+from .cache import PredictionCache, cache
 from .config import CORS_ORIGINS, SERVICE_NAME, SERVICE_VERSION
 from .reference import get_reference
 from .schemas import (
@@ -18,6 +24,8 @@ from .schemas import (
     PredictResponse,
     SchemaResponse,
 )
+
+MAX_BATCH_REQUEST = 256
 
 FIELD_LABELS: dict[str, str] = {
     "OverallQual": "Overall quality (1-10)",
@@ -33,11 +41,23 @@ FIELD_LABELS: dict[str, str] = {
 }
 
 
+batcher = MicroBatcher(
+    model_module.predict_many,
+    max_size=config.BATCH_MAX_SIZE,
+    max_wait_ms=config.BATCH_MAX_WAIT_MS,
+)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Load the model once at startup rather than per request."""
+    """Per worker process: load the model, connect Redis, start the batcher."""
     model_module.load_model()
+    await cache.connect()
+    if config.BATCHING_ENABLED:
+        await batcher.start()
     yield
+    await batcher.stop()
+    await cache.close()
 
 
 app = FastAPI(
@@ -67,7 +87,19 @@ def health() -> HealthResponse:
         service=SERVICE_NAME,
         version=SERVICE_VERSION,
         model_loaded=model_module.is_loaded(),
+        model_backend=model_module.backend_name(),
     )
+
+
+@app.get("/stats", tags=["ops"])
+def stats() -> dict[str, Any]:
+    """Per-worker optimisation counters (cache hit rate, batch sizes)."""
+    return {
+        "pid": os.getpid(),
+        "model_backend": model_module.backend_name(),
+        "cache": cache.snapshot(),
+        "batching": batcher.snapshot(),
+    }
 
 
 @app.get("/schema", response_model=SchemaResponse, tags=["model"])
@@ -104,14 +136,50 @@ def form_schema() -> SchemaResponse:
     return SchemaResponse(fields=fields, total_model_columns=len(reference.columns))
 
 
+async def _infer(payload: dict[str, Any]) -> tuple[float, float]:
+    if batcher.running:
+        return await batcher.submit(payload)
+    return await run_in_threadpool(model_module.predict, payload)
+
+
+def _response(sale_price: float, log_price: float, cached: bool) -> PredictResponse:
+    return PredictResponse(sale_price=round(sale_price, 2), log_price=log_price, cached=cached)
+
+
 @app.post("/predict", response_model=PredictResponse, tags=["model"])
-def predict(features: HouseFeatures) -> PredictResponse:
-    """Predict the sale price for one house."""
+async def predict(features: HouseFeatures) -> PredictResponse:
+    """Predict the sale price for one house.
+
+    Path: Redis exact-match cache -> dynamic batcher -> ONNX model.
+    """
+    payload = features.to_raw_columns()
+    key = PredictionCache.key(payload, model_module.backend_name() or "none")
+    hit = await cache.get(key)
+    if hit is not None:
+        return _response(hit["sale_price"], hit["log_price"], cached=True)
+
     try:
-        sale_price, log_price = model_module.predict(features.to_raw_columns())
+        model_module.validate(payload)
+        sale_price, log_price = await _infer(payload)
     except FileNotFoundError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
-    return PredictResponse(sale_price=round(sale_price, 2), log_price=log_price)
+    await cache.set(key, {"sale_price": sale_price, "log_price": log_price})
+    return _response(sale_price, log_price, cached=False)
+
+
+@app.post("/predict/batch", response_model=list[PredictResponse], tags=["model"])
+async def predict_batch(
+    houses: list[HouseFeatures] = Body(..., min_length=1, max_length=MAX_BATCH_REQUEST),
+) -> list[PredictResponse]:
+    """Client-side batching: score up to 256 houses in one model call."""
+    payloads = [house.to_raw_columns() for house in houses]
+    try:
+        results = await run_in_threadpool(model_module.predict_many, payloads)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return [_response(price, log_price, cached=False) for price, log_price in results]

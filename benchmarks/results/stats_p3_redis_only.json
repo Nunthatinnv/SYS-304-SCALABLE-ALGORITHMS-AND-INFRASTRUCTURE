@@ -1,0 +1,1 @@
+{"pid":3021,"model_backend":"student","cache":{"l1_enabled":false,"l2_enabled":true,"l1_hits":0,"l2_hits":54545,"misses":50,"errors":0,"hit_rate":0.9991,"l1_entries":0,"l2_connected":true},"batching":{"enabled":true,"max_size":64,"max_wait_ms":0.0,"batches":50,"items":50,"avg_batch_size":1.0,"largest_batch":1}}

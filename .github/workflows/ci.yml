@@ -67,6 +67,16 @@ jobs:
           curl -fsS -X POST http://localhost:8000/predict \
             -H 'Content-Type: application/json' \
             -d '{"OverallQual":7,"GrLivArea":1710,"TotalBsmtSF":856,"1stFlrSF":856,"YearBuilt":2003,"GarageCars":2,"FullBath":2,"TotRmsAbvGrd":8,"LotArea":8450,"Neighborhood":"CollgCr"}'
+          # Phase 3: a repeat request must be served from the cache, and the
+          # Redis tier must be connected. (The Redis write is asynchronous and
+          # the repeat may land on another worker, hence the short pause.)
+          sleep 1
+          curl -fsS -X POST http://localhost:8000/predict \
+            -H 'Content-Type: application/json' \
+            -d '{"OverallQual":7,"GrLivArea":1710,"TotalBsmtSF":856,"1stFlrSF":856,"YearBuilt":2003,"GarageCars":2,"FullBath":2,"TotRmsAbvGrd":8,"LotArea":8450,"Neighborhood":"CollgCr"}' \
+            | grep -q '"cached":true'
+          curl -fsS http://localhost:8000/stats | grep -q '"l2_connected":true'
+          docker compose exec -T redis redis-cli dbsize
 
       - name: Dump logs on failure
         if: failure()
